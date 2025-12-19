@@ -54,7 +54,7 @@ const getStoredToken = (): string | null => {
   return token;
 };
 
-// Helper: Save token to storage (belt and suspenders approach)
+// Helper: Save token to storage
 const saveToken = (token: string) => {
   if (typeof window === "undefined") return;
   
@@ -78,7 +78,7 @@ const clearAllTokens = () => {
   sessionStorage.removeItem("token");
   sessionStorage.removeItem("accessToken");
   
-  // Clear Cookies (multiple variations)
+  // Clear Cookies
   document.cookie = "token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
   document.cookie = "accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
 };
@@ -86,7 +86,6 @@ const clearAllTokens = () => {
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true); // CRITICAL: Start as true
-  // HYDRATION FIX: Initialize with fixed default, update from localStorage in useEffect
   const [language, setLanguageState] = useState<string>("TR");
   const router = useRouter();
 
@@ -96,7 +95,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     saveLanguage(lang);
   };
 
-  // HYDRATION FIX: Load language from localStorage AFTER mount
+  // Load language from localStorage AFTER mount
   useEffect(() => {
     const storedLang = getStoredLanguage();
     if (storedLang !== language) {
@@ -104,48 +103,52 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, []);
 
-  // STEP 0: Set document language attribute for browser/accessibility
+  // Set document language attribute
   useEffect(() => {
     if (typeof document !== "undefined") {
       document.documentElement.lang = language.toLowerCase();
-      console.log(`🌍 [AuthContext] Language set to: ${language}`);
     }
   }, [language]);
 
-  // STEP 1: Initialize auth on mount (happens ONCE per session)
+  // STEP 1: Initialize auth on mount
   useEffect(() => {
     const initAuth = async () => {
-      console.log("🔐 [AuthContext] Initializing authentication...");
+      // console.log("🔐 [AuthContext] Initializing authentication...");
       
       const token = getStoredToken();
       
       if (!token) {
-        console.log("⚠️ [AuthContext] No token found in storage");
+        // console.log("⚠️ [AuthContext] No token found in storage");
         setLoading(false);
         return;
       }
 
-      console.log("✅ [AuthContext] Token found, fetching user profile...");
-      
       try {
         // Fetch user profile with existing token
         const response = await userApi.getProfile();
         setUser(response.data);
-        console.log("✅ [AuthContext] User authenticated:", response.data.email);
+        // console.log("✅ [AuthContext] User authenticated:", response.data.email);
       } catch (error: any) {
-        console.error("❌ [AuthContext] Token validation failed:", error.message);
-        // Token is invalid/expired - clean up
-        clearAllTokens();
-        setUser(null);
+        console.error("❌ [AuthContext] Token validation failed:", error);
+        
+        // --- GÜVENLİK GÜNCELLEMESİ ---
+        // Eğer hata sadece sunucuya ulaşamamaksa (500, 503, Network Error) token silme.
+        // Sadece kesin olarak "Yetkisiz" (401) denirse sil.
+        if (error.response && error.response.status === 401) {
+             console.log("🔒 Token expired or invalid, logging out...");
+             clearAllTokens();
+             setUser(null);
+        } else {
+             console.warn("⚠️ Network error or server issue. Keeping token strictly for retry.");
+             // Token'ı koruyoruz, kullanıcıyı atmıyoruz.
+        }
       } finally {
-        // ALWAYS set loading to false after initialization
         setLoading(false);
-        console.log("🏁 [AuthContext] Initialization complete");
       }
     };
 
     initAuth();
-  }, []); // Empty dependency array = runs once
+  }, []);
 
   // STEP 2: Login function
   const login = async (credentials: any) => {
@@ -158,15 +161,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error("Invalid login response");
       }
 
-      // Save token to BOTH storage locations
       saveToken(accessToken);
-      
-      // Update user state
       setUser(userData);
       
       toast.success(`Welcome back, ${userData.firstName}!`);
       
-      // Navigate based on role
       const targetRoute = userData.role === "ADMIN" ? "/panel/dashboard" : "/dashboard";
       router.push(targetRoute);
       
@@ -184,71 +183,3 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       setLoading(true);
       const response = await authApi.register(data);
-      const { accessToken, user: userData } = response.data;
-
-      if (!accessToken || !userData) {
-        throw new Error("Invalid registration response");
-      }
-
-      // Save token
-      saveToken(accessToken);
-      
-      // Update user state
-      setUser(userData);
-      
-      toast.success("Account created successfully!");
-      router.push("/dashboard");
-      
-    } catch (error: any) {
-      const msg = error.response?.data?.message || "Registration failed";
-      toast.error(msg);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // STEP 4: Logout function (NUCLEAR CLEAR)
-  const logout = useCallback(() => {
-    console.log("🚪 [AuthContext] Logging out...");
-    
-    // Clear all tokens from everywhere
-    clearAllTokens();
-    
-    // Clear user state
-    setUser(null);
-    
-    // Navigate to login
-    router.push("/login");
-    
-    toast.info("Logged out successfully");
-  }, [router]);
-
-  // STEP 5: Refresh user profile
-  const refreshUser = async () => {
-    try {
-      const response = await userApi.getProfile();
-      setUser(response.data);
-      console.log("♻️ [AuthContext] User profile refreshed");
-    } catch (error) {
-      console.error("❌ [AuthContext] Failed to refresh user", error);
-      // If refresh fails, user might be logged out
-      clearAllTokens();
-      setUser(null);
-    }
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, loading, language, setLanguage, login, register, logout, refreshUser }}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-};
