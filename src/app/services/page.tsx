@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Stethoscope,
@@ -19,54 +19,63 @@ import Footer from "@/components/layout/Footer";
 import SectionHeading from "@/components/ui/SectionHeading";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
+import { getTranslation } from "@/lib/translations";
 
 const ServicesPage = () => {
+  // HYDRATION FIX: Track if component is mounted
+  const [mounted, setMounted] = useState(false);
+  const { language } = useAuth();
+  const t = getTranslation(language);
+  const defaultT = getTranslation("TR");
+
+  // HYDRATION FIX: Set mounted after client-side render
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const fadeInUp = {
     hidden: { opacity: 0, y: 30 },
     visible: { opacity: 1, y: 0 },
   };
 
+  const sp = mounted ? t.servicesPage : defaultT.servicesPage;
+
   const services = [
     {
       icon: Stethoscope,
-      title: "General Consultation",
-      description:
-        "Comprehensive health check-ups and consultations with experienced general practitioners.",
-      features: ["Physical Examination", "Health Screening", "Preventive Care"],
+      title: sp.generalConsultation,
+      description: sp.generalConsultationDesc,
+      features: [sp.feature1, sp.feature2, sp.feature3],
     },
     {
       icon: Heart,
-      title: "Cardiology",
-      description:
-        "Expert cardiac care including diagnostics, treatment, and rehabilitation services.",
+      title: sp.cardiology,
+      description: sp.cardiologyDesc,
       features: ["ECG & Echo", "Heart Disease Management", "Cardiac Rehabilitation"],
     },
     {
       icon: Brain,
-      title: "Neurology",
-      description:
-        "Specialized care for neurological conditions with advanced diagnostic capabilities.",
+      title: sp.neurology,
+      description: sp.neurologyDesc,
       features: ["Brain Imaging", "Stroke Care", "Migraine Treatment"],
     },
     {
       icon: Baby,
-      title: "Pediatrics",
-      description:
-        "Dedicated healthcare services for infants, children, and adolescents.",
+      title: sp.pediatrics,
+      description: sp.pediatricsDesc,
       features: ["Well-Child Visits", "Vaccinations", "Growth Monitoring"],
     },
     {
       icon: Activity,
-      title: "Orthopedics",
-      description:
-        "Treatment for bone, joint, and muscle conditions with surgical and non-surgical options.",
+      title: sp.orthopedics,
+      description: sp.orthopedicsDesc,
       features: ["Joint Replacement", "Sports Medicine", "Fracture Care"],
     },
     {
       icon: Pill,
-      title: "Pharmacy Services",
-      description:
-        "On-site pharmacy with a wide range of medications and health products.",
+      title: sp.pharmacy,
+      description: sp.pharmacyDesc,
       features: ["Prescription Filling", "Drug Counseling", "Home Delivery"],
     },
   ];
@@ -74,23 +83,23 @@ const ServicesPage = () => {
   const benefits = [
     {
       icon: Calendar,
-      title: "Easy Booking",
-      description: "Schedule appointments online 24/7 with instant confirmation.",
+      title: sp.easyBooking,
+      description: sp.easyBookingDesc,
     },
     {
       icon: Clock,
-      title: "Flexible Hours",
-      description: "Extended hours and weekend availability for your convenience.",
+      title: sp.flexibleHours,
+      description: sp.flexibleHoursDesc,
     },
     {
       icon: Shield,
-      title: "Insurance Accepted",
-      description: "We work with most major insurance providers.",
+      title: sp.insuranceAccepted,
+      description: sp.insuranceAcceptedDesc,
     },
     {
       icon: FileText,
-      title: "Digital Records",
-      description: "Secure access to your medical records anytime, anywhere.",
+      title: sp.digitalRecords,
+      description: sp.digitalRecordsDesc,
     },
   ];
 
@@ -99,7 +108,7 @@ const ServicesPage = () => {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-br from-teal-600 to-teal-700 pt-32 pb-20">
+      <section className="bg-gradient-to-br from-teal-600 to-teal-700 pt-24 sm:pt-32 pb-16 sm:pb-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial="hidden"
@@ -108,11 +117,11 @@ const ServicesPage = () => {
             transition={{ duration: 0.6 }}
             className="text-center text-white"
           >
-            <h1 className="text-4xl md:text-5xl font-bold mb-4">
-              Our Healthcare Services
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4">
+              {sp.heroTitle}
             </h1>
-            <p className="text-xl text-teal-50 max-w-2xl mx-auto">
-              Comprehensive medical care tailored to your needs
+            <p className="text-lg sm:text-xl text-teal-50 max-w-2xl mx-auto">
+              {sp.heroSubtitle}
             </p>
           </motion.div>
         </div>
@@ -129,8 +138,8 @@ const ServicesPage = () => {
             transition={{ duration: 0.6 }}
           >
             <SectionHeading
-              title="Medical Services We Offer"
-              subtitle="From routine check-ups to specialized treatments, we're here for you"
+              title={sp.ourServices}
+              subtitle={sp.servicesSubtitle}
             />
           </motion.div>
 
@@ -182,8 +191,8 @@ const ServicesPage = () => {
             transition={{ duration: 0.6 }}
           >
             <SectionHeading
-              title="Why Choose Our Services?"
-              subtitle="Experience healthcare that's designed around you"
+              title={sp.whyChoose}
+              subtitle={sp.whyChooseSubtitle}
             />
           </motion.div>
 
@@ -223,11 +232,10 @@ const ServicesPage = () => {
             className="text-center"
           >
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
-              Ready to Get Started?
+              {mounted ? t.footer.readyToBook : defaultT.footer.readyToBook}
             </h2>
             <p className="text-xl text-teal-50 mb-10 max-w-2xl mx-auto">
-              Book an appointment with our expert doctors today and experience
-              quality healthcare.
+              {mounted ? t.footer.readyToBookDesc : defaultT.footer.readyToBookDesc}
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link href="/doctors">
@@ -235,7 +243,7 @@ const ServicesPage = () => {
                   size="lg"
                   className="bg-white text-teal-600 hover:bg-gray-100 text-lg px-8 py-6 rounded-xl"
                 >
-                  Find a Doctor
+                  {mounted ? t.nav.findDoctors : defaultT.nav.findDoctors}
                 </Button>
               </Link>
               <Link href="/register">
@@ -244,7 +252,7 @@ const ServicesPage = () => {
                   variant="outline"
                   className="bg-transparent border-2 border-white text-white hover:bg-white/10 text-lg px-8 py-6 rounded-xl"
                 >
-                  Create Account
+                  {mounted ? t.nav.register : defaultT.nav.register}
                 </Button>
               </Link>
             </div>

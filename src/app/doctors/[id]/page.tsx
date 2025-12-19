@@ -17,11 +17,11 @@ import Footer from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import BookingModal from "@/components/booking/BookingModal";
+import BookingModal from "@/components/appointments/BookingModal";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import Image from "next/image";
-import { Doctor, Service } from "@/types";
+import { Doctor } from "@/types";
 
 const DoctorDetailPage = () => {
   const params = useParams();
@@ -42,7 +42,8 @@ const DoctorDetailPage = () => {
 
   const fetchDoctorDetails = async () => {
     try {
-      const response = await fetch(`http://localhost:3000/api/v1/strapi/doctors/${doctorId}`);
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
+      const response = await fetch(`${apiUrl}/cms/doctors/${doctorId}`);
       
       if (!response.ok) {
         throw new Error("Failed to fetch doctor details");
@@ -124,18 +125,18 @@ const DoctorDetailPage = () => {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-br from-teal-600 to-teal-700 pt-32 pb-12">
+      <section className="bg-gradient-to-br from-teal-600 to-teal-700 pt-24 sm:pt-32 pb-8 sm:pb-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Button
             onClick={() => router.push("/doctors")}
             variant="ghost"
-            className="text-white hover:bg-teal-700 mb-6"
+            className="text-white hover:bg-teal-700 mb-4 sm:mb-6"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Doctors
           </Button>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
             {/* Doctor Image */}
             <div className="lg:col-span-1">
               <div className="relative h-80 lg:h-96 bg-white rounded-2xl overflow-hidden shadow-xl">
@@ -160,12 +161,12 @@ const DoctorDetailPage = () => {
             <div className="lg:col-span-2 text-white">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h1 className="text-4xl md:text-5xl font-bold mb-2">
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
                     Dr. {doctor.name}
                   </h1>
                   <div className="flex items-center gap-2 mb-4">
                     <Stethoscope className="w-5 h-5" />
-                    <p className="text-xl text-teal-50">{doctor.specialty}</p>
+                    <p className="text-lg sm:text-xl text-teal-50">{doctor.specialty}</p>
                   </div>
                 </div>
                 {!doctor.is_active && (
@@ -175,7 +176,7 @@ const DoctorDetailPage = () => {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                 {doctor.experience && doctor.experience > 0 && (
                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-1">
@@ -230,11 +231,11 @@ const DoctorDetailPage = () => {
       </section>
 
       {/* Biography Section */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         <div>
           <Card>
             <CardHeader>
-              <CardTitle className="text-2xl">About Dr. {doctor.name}</CardTitle>
+              <CardTitle className="text-xl sm:text-2xl">About Dr. {doctor.name}</CardTitle>
             </CardHeader>
             <CardContent>
               {doctor.biography ? (
@@ -293,14 +294,13 @@ const DoctorDetailPage = () => {
         <BookingModal
           isOpen={isBookingModalOpen}
           onClose={() => setIsBookingModalOpen(false)}
-          service={{
+          doctor={{
             id: doctor.id,
-            title: `Consultation with Dr. ${doctor.name}`,
-            description: doctor.specialty,
-            duration: "60 min",
-            price: doctor.price || 0,
-            strapiDoctorId: doctor.id,
+            name: doctor.name,
+            specialty: doctor.specialty,
+            price: doctor.price,
           }}
+          isAuthenticated={!!user}
         />
       )}
     </div>

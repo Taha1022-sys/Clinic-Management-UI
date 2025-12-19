@@ -11,6 +11,8 @@ import Footer from "@/components/layout/Footer";
 import { Mail, Phone, MapPin, Clock, Send } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { useAuth } from "@/context/AuthContext";
+import { getTranslation } from "@/lib/translations";
 
 const contactSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -19,6 +21,9 @@ const contactSchema = z.object({
 });
 
 const ContactPage = () => {
+  const { language } = useAuth();
+  const t = getTranslation(language);
+  
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -31,22 +36,21 @@ const ContactPage = () => {
     e.preventDefault();
     setErrors({});
 
-    // CRITICAL: Use safeParse with flatten() to prevent crashes
+    // CRITICAL FIX: Use safeParse with flatten() to prevent crashes
     const result = contactSchema.safeParse(formData);
     
     if (!result.success) {
-      // Use flatten().fieldErrors for safe error mapping
+      // Safely extract field errors using flatten()
       const fieldErrors = result.error.flatten().fieldErrors;
       const newErrors: Record<string, string> = {};
       
-      Object.keys(fieldErrors).forEach((key) => {
-        const errorArray = fieldErrors[key as keyof typeof fieldErrors];
-        if (errorArray && errorArray.length > 0) {
-          newErrors[key] = errorArray[0];
-        }
-      });
+      // Map each field's first error message
+      if (fieldErrors.name?.[0]) newErrors.name = fieldErrors.name[0];
+      if (fieldErrors.email?.[0]) newErrors.email = fieldErrors.email[0];
+      if (fieldErrors.message?.[0]) newErrors.message = fieldErrors.message[0];
       
       setErrors(newErrors);
+      console.log("⚠️ [Contact] Validation errors:", newErrors);
       return;
     }
 
@@ -56,7 +60,7 @@ const ContactPage = () => {
       // Simulate API call (replace with actual API endpoint)
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      toast.success("Message sent successfully! We'll get back to you soon.");
+      toast.success(t.contact.successMessage);
       
       // Reset form
       setFormData({
@@ -65,7 +69,7 @@ const ContactPage = () => {
         message: "",
       });
     } catch (error) {
-      toast.error("Failed to send message. Please try again.");
+      toast.error(t.contact.errorMessage);
     } finally {
       setLoading(false);
     }
@@ -84,15 +88,15 @@ const ContactPage = () => {
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-teal-50 via-white to-blue-50">
       <Navbar />
       
-      <main className="flex-1 pt-24 pb-16">
+      <main className="flex-1 pt-20 sm:pt-24 pb-12 sm:pb-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Page Header */}
-          <div className="text-center mb-12">
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">
-              Get in Touch
+          <div className="text-center mb-8 sm:mb-12">
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
+              {t.contact.title}
             </h1>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Have questions? We'd love to hear from you. Send us a message and we'll respond as soon as possible.
+            <p className="text-base sm:text-lg text-gray-600 max-w-2xl mx-auto">
+              {t.contact.subtitle}
             </p>
           </div>
 
@@ -101,16 +105,16 @@ const ContactPage = () => {
             <div className="lg:col-span-2">
               <Card className="shadow-lg">
                 <CardHeader>
-                  <CardTitle className="text-2xl">Send Us a Message</CardTitle>
+                  <CardTitle className="text-2xl">{t.contact.getInTouch}</CardTitle>
                   <CardDescription>
-                    Fill out the form below and our team will get back to you within 24 hours
+                    {t.contact.subtitle}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSubmit} className="space-y-6">
                     {/* Name Field */}
                     <div className="space-y-2">
-                      <Label htmlFor="name">Full Name *</Label>
+                      <Label htmlFor="name">{t.contact.name} *</Label>
                       <Input
                         id="name"
                         name="name"
@@ -127,7 +131,7 @@ const ContactPage = () => {
 
                     {/* Email Field */}
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email Address *</Label>
+                      <Label htmlFor="email">{t.contact.email} *</Label>
                       <Input
                         id="email"
                         name="email"
@@ -144,12 +148,12 @@ const ContactPage = () => {
 
                     {/* Message Field */}
                     <div className="space-y-2">
-                      <Label htmlFor="message">Message *</Label>
+                      <Label htmlFor="message">{t.contact.message} *</Label>
                       <Textarea
                         id="message"
                         name="message"
                         rows={6}
-                        placeholder="Tell us how we can help you..."
+                        placeholder={t.contact.message}
                         value={formData.message}
                         onChange={handleChange}
                         className={errors.message ? "border-red-500" : ""}
@@ -168,12 +172,12 @@ const ContactPage = () => {
                       {loading ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                          Sending...
+                          {t.contact.sending}
                         </>
                       ) : (
                         <>
                           <Send className="w-4 h-4 mr-2" />
-                          Send Message
+                          {t.contact.sendMessage}
                         </>
                       )}
                     </Button>
@@ -187,9 +191,9 @@ const ContactPage = () => {
               {/* Contact Details Card */}
               <Card className="shadow-lg">
                 <CardHeader>
-                  <CardTitle className="text-xl">Contact Information</CardTitle>
+                  <CardTitle className="text-xl">{t.contact.ourInfo}</CardTitle>
                   <CardDescription>
-                    Reach us through any of these channels
+                    {t.contact.subtitle}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -199,7 +203,7 @@ const ContactPage = () => {
                       <MapPin className="w-5 h-5 text-teal-600" />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">Address</p>
+                      <p className="font-medium text-gray-900">{t.contact.address}</p>
                       <p className="text-sm text-gray-600 mt-1">
                         123 Medical Center Drive<br />
                         Healthcare City, HC 12345
@@ -213,7 +217,7 @@ const ContactPage = () => {
                       <Phone className="w-5 h-5 text-teal-600" />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">Phone</p>
+                      <p className="font-medium text-gray-900">{t.contact.phone}</p>
                       <p className="text-sm text-gray-600 mt-1">
                         +1 (555) 123-4567
                       </p>
@@ -226,7 +230,7 @@ const ContactPage = () => {
                       <Mail className="w-5 h-5 text-teal-600" />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">Email</p>
+                      <p className="font-medium text-gray-900">{t.contact.emailLabel}</p>
                       <p className="text-sm text-gray-600 mt-1">
                         contact@mediflow.com
                       </p>
@@ -239,11 +243,9 @@ const ContactPage = () => {
                       <Clock className="w-5 h-5 text-teal-600" />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">Working Hours</p>
+                      <p className="font-medium text-gray-900">{t.contact.businessHours}</p>
                       <p className="text-sm text-gray-600 mt-1">
-                        Monday - Friday: 8:00 AM - 8:00 PM<br />
-                        Saturday: 9:00 AM - 5:00 PM<br />
-                        Sunday: Closed
+                        {t.contact.hoursValue}
                       </p>
                     </div>
                   </div>

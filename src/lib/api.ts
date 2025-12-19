@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Base instance
 export const api = axios.create({
-  baseURL: "http://localhost:3000/api/v1", 
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1", 
   headers: {
     "Content-Type": "application/json",
   },
@@ -44,12 +44,13 @@ export const doctorApi = {
 
 export const appointmentApi = {
   createAppointment: (data: {
-    doctorId: number;
+    strapiDoctorId: number;
     appointmentDate: string; 
-    notes: string;
+    notes?: string;
   }) => api.post("/appointments", data),
   getMyAppointments: () => api.get("/appointments/my-appointments"),
-  cancelAppointment: (id: string) => api.delete(`/appointments/${id}`),
+  getAllAppointments: () => api.get("/appointments"),
+  cancelAppointment: (id: string) => api.patch(`/appointments/${id}/cancel`),
 };
 
 export const userApi = {
@@ -67,6 +68,12 @@ export const adminApi = {
     api.patch(`/appointments/${id}/status?status=${status}`),
   deleteDoctor: (id: string) => api.delete(`/cms/doctors/${id}`),
   createDoctor: (data: any) => api.post("/cms/doctors", data),
+};
+
+export const contactApi = {
+  getAllContacts: () => api.get("/cms/contacts"),
+  sendMessage: (data: { name: string; email: string; message: string }) =>
+    api.post("/cms/contacts", data),
 };
 
 export default api;

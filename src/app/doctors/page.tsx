@@ -7,9 +7,11 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Star, Clock } from "lucide-react";
+import { Clock, Info } from "lucide-react";
 import BookingModal from "@/components/appointments/BookingModal";
+import DoctorDetailModal from "@/components/doctors/DoctorDetailModal";
 import { toast } from "sonner";
+import { getTranslation, translateBranch } from "@/lib/translations";
 
 interface Doctor {
   id: string;
@@ -17,28 +19,56 @@ interface Doctor {
   specialty: string;
   experience?: number;
   price?: number;
+  // Raw API fields for detail modal
+  Title?: string;
+  Fullname?: string;
+  Branch?: string;
+  Experience?: number;
+  Price?: number;
+  Biography?: Array<{
+    type: string;
+    children: Array<{
+      type: string;
+      text: string;
+    }>;
+  }>;
 }
 
 export default function DoctorsPage() {
-  const { user } = useAuth();
+  const { user, language } = useAuth();
+  const t = getTranslation(language);
+  
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [doctorForDetail, setDoctorForDetail] = useState<Doctor | null>(null);
 
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
         const response = await doctorApi.getAllDoctors();
-        // STRAPI/CMS ÇÖZÜMÜ: Veri genellikle response.data.data içindedir
-        const rawData = response.data?.data || response.data || [];
+        // API returns an array directly or in response.data
+        const rawData = response.data || [];
         const mappedData = rawData.map((doc: any) => ({
           id: doc.id,
-          name: doc.name || doc.attributes?.name || doc.Fullname || doc.attributes?.Fullname || "Unknown Doctor",
-          specialty: doc.specialty || doc.attributes?.specialty || doc.Branch || doc.attributes?.Branch || "General Practice",
-          experience: doc.experience || doc.attributes?.experience || doc.Experience || doc.attributes?.Experience || 5,
-          price: doc.price || doc.attributes?.price || doc.Price || doc.attributes?.Price,
+          // Map API fields: Title + Fullname = name
+          name: doc.Title && doc.Fullname ? `${doc.Title} ${doc.Fullname}` : doc.Fullname || "Unknown Doctor",
+          // Map Branch to specialty
+          specialty: doc.Branch || "General Practice",
+          // Map capitalized fields
+          experience: doc.Experience || 5,
+          price: doc.Price,
+          // Preserve raw API fields for detail modal
+          Title: doc.Title,
+          Fullname: doc.Fullname,
+          Branch: doc.Branch,
+          Experience: doc.Experience,
+          Price: doc.Price,
+          Biography: doc.Biography,
         }));
+        console.log("Mapped doctors:", mappedData); // Debug log
         setDoctors(mappedData);
       } catch (error) {
         console.error("Error fetching doctors:", error);
@@ -52,7 +82,7 @@ export default function DoctorsPage() {
 
   const handleBookingClick = (doctor: Doctor) => {
     if (!user) {
-      toast.error("Lütfen randevu almak için giriş yapın");
+      toast.error(t.booking.loginRequired);
       return;
     }
     setSelectedDoctor(doctor);
@@ -64,16 +94,26 @@ export default function DoctorsPage() {
     setSelectedDoctor(null);
   };
 
+  const handleViewDetails = (doctor: Doctor) => {
+    setDoctorForDetail(doctor);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleCloseDetailModal = () => {
+    setIsDetailModalOpen(false);
+    setDoctorForDetail(null);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 pt-24 pb-12">
-        <h1 className="text-3xl font-bold mb-8 text-center text-teal-900">Uzman Doktorlarımız</h1>
+      <main className="max-w-7xl mx-auto px-4 pt-20 sm:pt-24 pb-12">
+        <h1 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8 text-center text-teal-900">{t.doctors.title}</h1>
         
         {loading ? (
-          <div className="text-center py-20">Yükleniyor...</div>
+          <div className="text-center py-20">{t.doctors.loading}</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
             {doctors.map((doctor) => (
               <Card key={doctor.id} className="hover:shadow-lg transition-shadow border-none">
                 <CardHeader className="bg-teal-50/50 pb-4">
@@ -83,28 +123,34 @@ export default function DoctorsPage() {
                     </div>
                     <div>
                       <CardTitle className="text-xl">{doctor.name || "Unknown Doctor"}</CardTitle>
-                      <p className="text-teal-600 font-medium">{doctor.specialty || "General Practice"}</p>
+                    <p className="text-teal-600 font-medium">{translateBranch(doctor.specialty || "General Practice", language)}</p>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-6">
                   <div className="space-y-3 text-gray-600 text-sm mb-6">
                     <div className="flex items-center gap-2">
-                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                      <span>{doctor.experience || 5}+ Yıl Deneyim</span>
-                    </div>
-                    <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-teal-600" />
-                      <span>Hafta İçi: 09:00 - 18:00</span>
+                      <span>{t.doctors.workingHours}</span>
                     </div>
                   </div>
                   
-                  <Button 
-                    className="w-full bg-teal-600 hover:bg-teal-700 text-white"
-                    onClick={() => handleBookingClick(doctor)}
-                  >
-                    Book Appointment
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline"
+                      className="flex-1 border-teal-600 text-teal-600 hover:bg-teal-50"
+                      onClick={() => handleViewDetails(doctor)}
+                    >
+                      <Info className="w-4 h-4 mr-2" />
+                      {t.doctors.viewDetails}
+                    </Button>
+                    <Button 
+                      className="flex-1 bg-teal-600 hover:bg-teal-700 text-white"
+                      onClick={() => handleBookingClick(doctor)}
+                    >
+                      {t.booking.bookAppointment}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -120,6 +166,15 @@ export default function DoctorsPage() {
           onClose={handleCloseModal}
           doctor={selectedDoctor}
           isAuthenticated={!!user}
+        />
+      )}
+
+      {/* Doctor Detail Modal */}
+      {doctorForDetail && (
+        <DoctorDetailModal
+          isOpen={isDetailModalOpen}
+          onClose={handleCloseDetailModal}
+          doctor={doctorForDetail}
         />
       )}
     </div>

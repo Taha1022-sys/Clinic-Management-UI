@@ -1,24 +1,24 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link"; // EKLENDİ
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import AppointmentDetailsModal from "@/components/admin/AppointmentDetailsModal";
+import DoctorDetailModal from "@/components/doctors/DoctorDetailModal";
 import { 
   Calendar, 
   Users, 
   Stethoscope, 
-  DollarSign, 
-  Clock, 
-  CheckCircle,
-  XCircle,
   MoreHorizontal,
   LogOut,
   LayoutDashboard,
-  Home // EKLENDİ
+  Home,
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import api, { doctorApi } from "@/lib/api";
 import { toast } from "sonner";
+import { getTranslation, translateBranch } from "@/lib/translations";
 
 // Admin API endpoints
 const adminApi = {
@@ -47,12 +48,19 @@ const adminApi = {
   deleteDoctor: (id: string) => api.delete(`/doctors/${id}`),
 };
 
-// GÜVENLİ TİP TANIMLAMASI
+// UPDATED TYPE DEFINITION with real API structure
 interface Appointment {
   id: string;
   appointmentDate: string;
   status: string;
   notes?: string;
+  strapiDoctorId: number; // The ID we use for lookup
+  user?: { 
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  // Legacy fields (kept for backward compatibility)
   patient?: { 
     firstName: string;
     lastName: string;
@@ -66,25 +74,63 @@ interface Appointment {
 }
 
 const AdminDashboardPage = () => {
-  const router = useRouter();
-  const { user, logout, loading: authLoading } = useAuth();
+  const { user, logout, loading: authLoading, language } = useAuth();
+  const t = getTranslation(language);
   
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
+  const [doctorsList, setDoctorsList] = useState<any[]>([]); // For lookup
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("appointments");
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [selectedDoctorForDetail, setSelectedDoctorForDetail] = useState<any>(null);
+  const [isDoctorDetailModalOpen, setIsDoctorDetailModalOpen] = useState(false);
+  
+  // Filter states
+  const [patientSearch, setPatientSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [specialtyFilter, setSpecialtyFilter] = useState("ALL");
+
+  // Helper: Get doctor by ID from the list
+  const getDoctorById = (id: number | string) => {
+    return doctorsList.find((doc) => doc.id === Number(id));
+  };
+
+  // Filter appointments
+  const filteredAppointments = appointments.filter((appointment) => {
+    const patient = appointment.user;
+    const patientName = `${patient?.firstName || ""} ${patient?.lastName || ""}`.toLowerCase();
+    const matchesPatient = patientName.includes(patientSearch.toLowerCase());
+    
+    const matchesStatus = statusFilter === "ALL" || appointment.status === statusFilter;
+    
+    const doctor = getDoctorById(appointment.strapiDoctorId);
+    const matchesSpecialty = specialtyFilter === "ALL" || doctor?.Branch === specialtyFilter;
+    
+    return matchesPatient && matchesStatus && matchesSpecialty;
+  });
+
+  // Get unique specialties from doctors list
+  const uniqueSpecialties = Array.from(new Set(doctorsList.map(d => d.Branch).filter(Boolean)));
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
     confirmed: 0,
     completed: 0,
-    todayRevenue: 0,
   });
+
+  // Fetch doctors first for lookup
+  useEffect(() => {
+    if (user?.role === "ADMIN") {
+      fetchDoctorsForLookup();
+    }
+  }, [user]);
 
   // Fetch data when user is authenticated and is admin
   useEffect(() => {
-    if (user?.role === "ADMIN") {
+    if (user?.role === "ADMIN" && doctorsList.length > 0) {
       fetchAppointments();
       if (activeTab === "doctors") {
         fetchDoctors();
@@ -92,13 +138,35 @@ const AdminDashboardPage = () => {
         fetchPatients();
       }
     }
-  }, [user, activeTab]);
+  }, [user, activeTab, doctorsList]);
+
+  const fetchDoctorsForLookup = async () => {
+    try {
+      const response = await doctorApi.getAllDoctors();
+      const rawData = response.data || [];
+      const mappedDoctors = rawData.map((doc: any) => ({
+        id: doc.id,
+        Fullname: doc.Fullname,
+        Title: doc.Title,
+        Branch: doc.Branch,
+        Price: doc.Price,
+        Experience: doc.Experience,
+      }));
+      setDoctorsList(mappedDoctors);
+      console.log("👨‍⚕️ [Admin] Doctors loaded for lookup:", mappedDoctors.length);
+    } catch (error) {
+      console.error("Error fetching doctors for lookup:", error);
+    }
+  };
 
   const fetchAppointments = async () => {
     try {
       setLoading(true);
       const response = await adminApi.getAllAppointments();
       const appointmentsData = response.data || [];
+      
+      // Debug log to check data structure
+      console.log("📋 [Admin] Raw Appointment Data:", appointmentsData[0]);
       
       setAppointments(appointmentsData);
       
@@ -107,15 +175,7 @@ const AdminDashboardPage = () => {
       const confirmed = appointmentsData.filter((a: Appointment) => a.status === "CONFIRMED").length;
       const completed = appointmentsData.filter((a: Appointment) => a.status === "COMPLETED").length;
       
-      const today = new Date().toDateString();
-      const todayRevenue = appointmentsData
-        .filter((a: Appointment) => {
-          const apptDate = new Date(a.appointmentDate).toDateString();
-          return apptDate === today && a.status === "COMPLETED";
-        })
-        .reduce((sum: number, a: Appointment) => sum + (a.doctor?.price || 0), 0);
-      
-      setStats({ total, pending, confirmed, completed, todayRevenue });
+      setStats({ total, pending, confirmed, completed });
     } catch (error: unknown) {
       console.error("Error fetching appointments:", error);
       toast.error("Failed to load appointments");
@@ -128,16 +188,28 @@ const AdminDashboardPage = () => {
     try {
       setLoading(true);
       const response = await doctorApi.getAllDoctors();
-      const rawData = response.data?.data || response.data || [];
+      // API returns an array directly or in response.data
+      const rawData = response.data || [];
       const doctorsData = rawData.map((doc: any) => ({
         id: doc.id,
-        name: doc.name || doc.attributes?.name || doc.Fullname || doc.attributes?.Fullname || `${doc.firstName || ""} ${doc.lastName || ""}`,
-        specialty: doc.specialty || doc.attributes?.specialty || doc.Branch || doc.attributes?.Branch || "General Practice",
-        experience: doc.experience || doc.attributes?.experience || doc.Experience || doc.attributes?.Experience,
-        price: doc.price || doc.attributes?.price || doc.Price || doc.attributes?.Price,
-        contact_email: doc.contact_email || doc.attributes?.contact_email,
-        is_active: (doc.is_active !== false) && (doc.attributes?.is_active !== false),
+        // Map API fields: Title + Fullname = name
+        name: doc.Title && doc.Fullname ? `${doc.Title} ${doc.Fullname}` : doc.Fullname || "Unknown Doctor",
+        // Map Branch to specialty
+        specialty: doc.Branch || "General Practice",
+        // Map capitalized fields
+        experience: doc.Experience,
+        price: doc.Price,
+        contact_email: doc.contact_email,
+        is_active: doc.is_active !== false,
+        // Preserve raw API fields for detail modal
+        Title: doc.Title,
+        Fullname: doc.Fullname,
+        Branch: doc.Branch,
+        Experience: doc.Experience,
+        Price: doc.Price,
+        Biography: doc.Biography,
       }));
+      console.log("Admin - Mapped doctors:", doctorsData); // Debug log
       setDoctors(doctorsData);
     } catch (error) {
       console.error("Error fetching doctors:", error);
@@ -184,19 +256,6 @@ const AdminDashboardPage = () => {
     } catch (error: unknown) {
       console.error("Error updating appointment:", error);
       toast.error("Failed to update appointment");
-    }
-  };
-
-  const handleDeleteDoctor = async (doctorId: string) => {
-    if (!confirm("Are you sure you want to delete this doctor?")) return;
-    
-    try {
-      await adminApi.deleteDoctor(doctorId);
-      toast.success("Doctor deleted successfully");
-      fetchDoctors();
-    } catch (error) {
-      console.error("Error deleting doctor:", error);
-      toast.error("Failed to delete doctor");
     }
   };
 
@@ -263,7 +322,7 @@ const AdminDashboardPage = () => {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100">
       {/* Sidebar */}
-      <aside className="w-64 bg-gradient-to-b from-purple-900 to-indigo-900 text-white fixed h-full shadow-xl">
+      <aside className="w-64 bg-gradient-to-b from-purple-900 to-indigo-900 text-white fixed h-full shadow-xl hidden lg:block">
         <div className="p-6">
           <div className="flex items-center gap-3 mb-8">
             <div className="bg-white p-2 rounded-lg">
@@ -320,6 +379,17 @@ const AdminDashboardPage = () => {
               <Stethoscope className="w-5 h-5" />
               <span>Doctors</span>
             </button>
+            <button
+              onClick={() => setActiveTab("messages")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                activeTab === "messages"
+                  ? "bg-white text-purple-900 font-semibold"
+                  : "hover:bg-purple-800"
+              }`}
+            >
+              <MessageSquare className="w-5 h-5" />
+              <span>Messages</span>
+            </button>
           </nav>
         </div>
 
@@ -342,28 +412,24 @@ const AdminDashboardPage = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="ml-64 flex-1 p-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard Overview</h1>
+      <main className="lg:ml-64 flex-1 p-4 sm:p-6 lg:p-8">
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">{t.adminDashboard.dashboardOverview}</h1>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
           <Card className="border-l-4 border-l-purple-500">
             <CardHeader className="pb-2"><CardTitle className="text-3xl">{stats.total}</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-purple-600">Total Appointments</p></CardContent>
+            <CardContent><p className="text-sm text-purple-600">{t.adminDashboard.totalAppointments}</p></CardContent>
           </Card>
           <Card className="border-l-4 border-l-yellow-500">
             <CardHeader className="pb-2"><CardTitle className="text-3xl">{stats.pending}</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-yellow-600">Pending Actions</p></CardContent>
+            <CardContent><p className="text-sm text-yellow-600">{t.adminDashboard.pendingActions}</p></CardContent>
           </Card>
           <Card className="border-l-4 border-l-green-500">
             <CardHeader className="pb-2"><CardTitle className="text-3xl">{stats.completed}</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-green-600">Completed Today</p></CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-indigo-500">
-            <CardHeader className="pb-2"><CardTitle className="text-3xl">${stats.todayRevenue}</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-indigo-600">Today's Revenue</p></CardContent>
+            <CardContent><p className="text-sm text-green-600">{t.adminDashboard.completedToday}</p></CardContent>
           </Card>
         </div>
 
@@ -371,28 +437,106 @@ const AdminDashboardPage = () => {
         {activeTab === "appointments" && (
           <Card>
             <CardHeader>
-              <CardTitle>Appointments Management</CardTitle>
+              <CardTitle>{t.adminDashboard.appointmentsManagement}</CardTitle>
             </CardHeader>
             <CardContent>
+              {/* Filter Bar */}
+              <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Patient Search */}
+                <div>
+                  <Label htmlFor="patientSearch" className="text-sm font-medium mb-2 block">
+                    {t.adminDashboard.filterByPatient}
+                  </Label>
+                  <Input
+                    id="patientSearch"
+                    placeholder={t.adminDashboard.searchPatient}
+                    value={patientSearch}
+                    onChange={(e) => setPatientSearch(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Status Filter */}
+                <div>
+                  <Label htmlFor="statusFilter" className="text-sm font-medium mb-2 block">
+                    {t.adminDashboard.filterByStatus}
+                  </Label>
+                  <select
+                    id="statusFilter"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="w-full h-10 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="ALL">{t.adminDashboard.allStatuses}</option>
+                    <option value="PENDING">{t.admin.pending}</option>
+                    <option value="CONFIRMED">{t.admin.confirmed}</option>
+                    <option value="COMPLETED">{t.admin.completed}</option>
+                    <option value="CANCELLED">{t.admin.cancelled}</option>
+                  </select>
+                </div>
+
+                {/* Specialty Filter */}
+                <div>
+                  <Label htmlFor="specialtyFilter" className="text-sm font-medium mb-2 block">
+                    {t.adminDashboard.filterBySpecialty}
+                  </Label>
+                  <select
+                    id="specialtyFilter"
+                    value={specialtyFilter}
+                    onChange={(e) => setSpecialtyFilter(e.target.value)}
+                    className="w-full h-10 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="ALL">{t.adminDashboard.allSpecialties}</option>
+                    {uniqueSpecialties.map((specialty) => (
+                      <option key={specialty} value={specialty}>
+                        {translateBranch(specialty, language)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Clear Filters Button */}
+              {(patientSearch || statusFilter !== "ALL" || specialtyFilter !== "ALL") && (
+                <div className="mb-4">
+                  <Button
+                    onClick={() => {
+                      setPatientSearch("");
+                      setStatusFilter("ALL");
+                      setSpecialtyFilter("ALL");
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {t.adminDashboard.clearFilters}
+                  </Button>
+                  <span className="ml-3 text-sm text-gray-600">
+                    {filteredAppointments.length} / {appointments.length} appointments
+                  </span>
+                </div>
+              )}
+
               {loading ? (
-                <p className="text-center py-8">Loading appointments...</p>
+                <p className="text-center py-8">{t.common.loading}</p>
               ) : appointments.length === 0 ? (
                 <p className="text-center py-8">No appointments found</p>
+              ) : filteredAppointments.length === 0 ? (
+                <p className="text-center py-8">No appointments match your filters</p>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Patient</TableHead>
-                        <TableHead>Doctor</TableHead>
-                        <TableHead>Specialty</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>{t.admin.date}</TableHead>
+                        <TableHead>{t.admin.patient}</TableHead>
+                        <TableHead>{t.admin.doctor}</TableHead>
+                        <TableHead>{t.adminDashboard.specialty}</TableHead>
+                        <TableHead>{t.admin.status}</TableHead>
+                        <TableHead className="text-right">{t.admin.actions}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {appointments.map((appointment) => {
+                      {filteredAppointments.map((appointment) => {
                         const { date, time } = formatDateTime(appointment.appointmentDate);
                         return (
                           <TableRow key={appointment.id}>
@@ -402,14 +546,24 @@ const AdminDashboardPage = () => {
                             </TableCell>
                             <TableCell>
                               <div className="font-medium">
-                                {appointment.patient?.firstName || "Unknown"} {appointment.patient?.lastName || "Patient"}
+                                {appointment.user?.firstName || "Unknown"} {appointment.user?.lastName || "Patient"}
                               </div>
-                              <div className="text-xs text-gray-500">{appointment.patient?.email || "-"}</div>
+                              <div className="text-xs text-gray-500">{appointment.user?.email || "-"}</div>
                             </TableCell>
                             <TableCell>
-                              <div className="font-medium">{appointment.doctor?.name || "Unknown Doctor"}</div>
+                              <div className="font-medium">
+                                {(() => {
+                                  const doctor = getDoctorById(appointment.strapiDoctorId);
+                                  return doctor ? `${doctor.Title || "Dr."} ${doctor.Fullname}` : `Dr. [ID: ${appointment.strapiDoctorId}]`;
+                                })()}
+                              </div>
                             </TableCell>
-                            <TableCell>{appointment.doctor?.specialty || "-"}</TableCell>
+                            <TableCell>
+                              {(() => {
+                                const doctor = getDoctorById(appointment.strapiDoctorId);
+                                return doctor?.Branch ? translateBranch(doctor.Branch, language) : "-";
+                              })()}
+                            </TableCell>
                             <TableCell>{getStatusBadge(appointment.status)}</TableCell>
                             <TableCell className="text-right">
                               <DropdownMenu>
@@ -419,9 +573,33 @@ const AdminDashboardPage = () => {
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => handleStatusUpdate(appointment.id, "CONFIRMED")}>Confirm</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleStatusUpdate(appointment.id, "COMPLETED")}>Complete</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleStatusUpdate(appointment.id, "CANCELLED")} className="text-red-600">Cancel</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => {
+                                    setSelectedAppointment(appointment);
+                                    setIsDetailsModalOpen(true);
+                                  }}>View Details</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel className="text-xs text-gray-500">Change Status</DropdownMenuLabel>
+                                  <DropdownMenuItem 
+                                    onClick={() => handleStatusUpdate(appointment.id, "PENDING")}
+                                  >
+                                    {t.admin.pending}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    onClick={() => handleStatusUpdate(appointment.id, "CONFIRMED")}
+                                  >
+                                    {t.admin.confirmed}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    onClick={() => handleStatusUpdate(appointment.id, "COMPLETED")}
+                                  >
+                                    {t.admin.completed}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    onClick={() => handleStatusUpdate(appointment.id, "CANCELLED")} 
+                                    className="text-red-600"
+                                  >
+                                    {t.admin.cancelled}
+                                  </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
@@ -440,17 +618,17 @@ const AdminDashboardPage = () => {
         {activeTab === "doctors" && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Doctors Management</CardTitle>
+              <CardTitle>{t.adminDashboard.doctorsManagement}</CardTitle>
               <Button 
                 className="bg-purple-600 hover:bg-purple-700"
                 onClick={() => toast.info("Add Doctor feature coming soon!")}
               >
-                + Add New Doctor
+                {t.adminDashboard.addNewDoctor}
               </Button>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-center py-8">Loading doctors...</p>
+                <p className="text-center py-8">{t.common.loading}</p>
               ) : doctors.length === 0 ? (
                 <p className="text-center py-8">No doctors found</p>
               ) : (
@@ -458,13 +636,13 @@ const AdminDashboardPage = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Avatar</TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Specialty</TableHead>
-                        <TableHead>Experience</TableHead>
-                        <TableHead>Price</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>{t.adminDashboard.avatar}</TableHead>
+                        <TableHead>{t.adminDashboard.name}</TableHead>
+                        <TableHead>{t.adminDashboard.specialty}</TableHead>
+                        <TableHead>{t.adminDashboard.experience}</TableHead>
+                        <TableHead>{t.adminDashboard.price}</TableHead>
+                        <TableHead>{t.adminDashboard.status}</TableHead>
+                        <TableHead className="text-right">{t.adminDashboard.actions}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -479,42 +657,30 @@ const AdminDashboardPage = () => {
                             <div className="font-medium">{doctor.name}</div>
                             <div className="text-xs text-gray-500">{doctor.contact_email || "-"}</div>
                           </TableCell>
-                          <TableCell>{doctor.specialty}</TableCell>
+                          <TableCell>{translateBranch(doctor.specialty, language)}</TableCell>
                           <TableCell>
-                            {doctor.experience ? `${doctor.experience} years` : "-"}
+                            {doctor.experience ? `${doctor.experience} ${t.doctors.yearsExp}` : "-"}
                           </TableCell>
                           <TableCell>
                             {doctor.price ? `$${doctor.price}` : "-"}
                           </TableCell>
                           <TableCell>
                             <Badge variant={doctor.is_active ? "default" : "destructive"}>
-                              {doctor.is_active ? "Active" : "Inactive"}
+                              {doctor.is_active ? t.adminDashboard.active : t.adminDashboard.inactive}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => router.push(`/doctors/${doctor.id}`)}>
-                                  View Profile
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => toast.info("Edit feature coming soon!")}>
-                                  Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => handleDeleteDoctor(doctor.id)}
-                                  className="text-red-600"
-                                >
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <Button
+                              onClick={() => {
+                                setSelectedDoctorForDetail(doctor);
+                                setIsDoctorDetailModalOpen(true);
+                              }}
+                              variant="outline"
+                              size="sm"
+                              className="border-purple-600 text-purple-600 hover:bg-purple-50"
+                            >
+                              {t.adminDashboard.viewProfileBtn}
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -526,15 +692,37 @@ const AdminDashboardPage = () => {
           </Card>
         )}
 
+        {/* Messages Tab - Coming Soon */}
+        {activeTab === "messages" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.adminDashboard?.messagesTitle || "Message Management"}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="bg-purple-100 p-6 rounded-full mb-6">
+                  <MessageSquare className="w-16 h-16 text-purple-600" />
+                </div>
+                <h3 className="text-2xl font-semibold text-gray-900 mb-3">
+                  {t.adminDashboard?.messagesComingSoonTitle || "Messages Feature Coming Soon"}
+                </h3>
+                <p className="text-gray-600 max-w-md">
+                  {t.adminDashboard?.messagesComingSoonDesc || "This feature will be activated very soon. You'll be able to manage all patient messages and inquiries from here."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Patients Tab */}
         {activeTab === "patients" && (
           <Card>
             <CardHeader>
-              <CardTitle>Patients Management</CardTitle>
+              <CardTitle>{t.adminDashboard.patientsManagement}</CardTitle>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-center py-8">Loading patients...</p>
+                <p className="text-center py-8">{t.common.loading}</p>
               ) : patients.length === 0 ? (
                 <div className="text-center py-12">
                   <Users className="w-16 h-16 mx-auto text-gray-400 mb-4" />
@@ -598,6 +786,30 @@ const AdminDashboardPage = () => {
           </Card>
         )}
       </main>
+
+      {/* Appointment Details Modal */}
+      <AppointmentDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={() => {
+          setIsDetailsModalOpen(false);
+          setSelectedAppointment(null);
+        }}
+        appointment={selectedAppointment}
+        doctor={selectedAppointment ? getDoctorById(selectedAppointment.strapiDoctorId) : null}
+      />
+
+      {/* Doctor Detail Modal */}
+      {selectedDoctorForDetail && (
+        <DoctorDetailModal
+          isOpen={isDoctorDetailModalOpen}
+          onClose={() => {
+            setIsDoctorDetailModalOpen(false);
+            setSelectedDoctorForDetail(null);
+          }}
+          doctor={selectedDoctorForDetail}
+        />
+      )}
+
     </div>
   );
 };

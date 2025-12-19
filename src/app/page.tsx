@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { 
@@ -22,8 +22,14 @@ import { useAuth } from "@/context/AuthContext";
 import { getTranslation } from "@/lib/translations";
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
   const { language } = useAuth();
   const t = getTranslation(language);
+  const defaultT = getTranslation("TR");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   const fadeInUp = {
     hidden: { opacity: 0, y: 30 },
@@ -75,7 +81,7 @@ export default function Home() {
               variants={fadeInUp}
               transition={{ duration: 0.6 }}
             >
-              <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 mb-6">
+              <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-gray-900 mb-6">
                 {t.hero.title}{" "}
                 <span className="text-teal-600">{t.hero.titleHighlight}</span>
               </h1>
@@ -86,7 +92,7 @@ export default function Home() {
               animate="visible"
               variants={fadeInUp}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-xl md:text-2xl text-gray-600 mb-10 max-w-3xl mx-auto"
+              className="text-lg md:text-xl lg:text-2xl text-gray-600 mb-10 max-w-3xl mx-auto px-4"
             >
               {t.hero.subtitle}
             </motion.p>
@@ -166,8 +172,8 @@ export default function Home() {
             transition={{ duration: 0.6 }}
           >
             <SectionHeading
-              title="Why Choose MediFlow?"
-              subtitle="Experience healthcare that puts you first with our comprehensive services"
+              title={mounted ? (t?.cta?.whyChoose || "Why Choose MediFlow?") : (defaultT?.cta?.whyChoose || "Why Choose MediFlow?")}
+              subtitle={mounted ? (t?.cta?.experienceHealthcare || "Experience healthcare that puts you first with our comprehensive services") : (defaultT?.cta?.experienceHealthcare || "Experience healthcare that puts you first with our comprehensive services")}
             />
           </motion.div>
 
@@ -212,18 +218,17 @@ export default function Home() {
               <Heart className="w-10 h-10 text-white" fill="currentColor" />
             </div>
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
-              Ready to Book Your Appointment?
+              {mounted ? t?.cta?.readyToBook : defaultT?.cta?.readyToBook || "Ready to Book Your Appointment?"}
             </h2>
             <p className="text-xl text-teal-50 mb-10 max-w-2xl mx-auto">
-              Join thousands of satisfied patients who trust MediFlow for their
-              healthcare needs.
+              {mounted ? t?.cta?.joinThousands : defaultT?.cta?.joinThousands || "Join thousands of satisfied patients who trust MediFlow for their healthcare needs."}
             </p>
             <Link href="/doctors">
               <Button
                 size="lg"
                 className="bg-white text-teal-600 hover:bg-gray-100 text-lg px-8 py-6 rounded-xl"
               >
-                Get Started Now
+                {mounted ? t?.cta?.getStartedNow : defaultT?.cta?.getStartedNow || "Get Started Now"}
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
             </Link>

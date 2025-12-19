@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Heart, Menu, X, User, Globe, LogOut, LayoutDashboard, Settings } from "lucide-react";
@@ -17,17 +17,27 @@ import { getTranslation } from "@/lib/translations";
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  // HYDRATION FIX: Track if component is mounted
+  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   
   // Connect to AuthContext with language
   const { user, loading, logout, language, setLanguage } = useAuth();
   const t = getTranslation(language);
+  // Default translations (matches server-side render)
+  const defaultT = getTranslation("TR");
 
+  // HYDRATION FIX: Set mounted after client-side render
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // HYDRATION FIX: Use default translations until mounted
   const navLinks = [
-    { name: t.nav.home, href: "/" },
-    { name: t.nav.findDoctors, href: "/doctors" },
-    { name: t.nav.services, href: "/services" },
-    { name: t.nav.contact, href: "/contact" },
+    { name: mounted ? t.nav.home : defaultT.nav.home, href: "/" },
+    { name: mounted ? t.nav.findDoctors : defaultT.nav.findDoctors, href: "/doctors" },
+    { name: mounted ? t.nav.services : defaultT.nav.services, href: "/services" },
+    { name: mounted ? t.nav.contact : defaultT.nav.contact, href: "/contact" },
   ];
 
   const languages = [
@@ -122,13 +132,13 @@ const Navbar = () => {
                   <DropdownMenuItem asChild>
                     <Link href={user.role === "ADMIN" ? "/panel/dashboard" : "/dashboard"} className="cursor-pointer">
                       <LayoutDashboard className="w-4 h-4 mr-2" />
-                      {user.role === "ADMIN" ? t.nav.adminPanel : t.nav.dashboard}
+                      {mounted ? (user.role === "ADMIN" ? t.nav.adminPanel : t.nav.dashboard) : defaultT.nav.dashboard}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/dashboard" className="cursor-pointer">
                       <Settings className="w-4 h-4 mr-2" />
-                      {t.nav.settings}
+                      {mounted ? t.nav.settings : defaultT.nav.settings}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -137,7 +147,7 @@ const Navbar = () => {
                     className="cursor-pointer text-red-600 focus:text-red-600"
                   >
                     <LogOut className="w-4 h-4 mr-2" />
-                    {t.nav.logout}
+                    {mounted ? t.nav.logout : defaultT.nav.logout}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -146,12 +156,12 @@ const Navbar = () => {
               <>
                 <Link href="/login">
                   <Button variant="ghost" className="text-gray-600 hover:text-teal-600">
-                    {t.nav.login}
+                    {mounted ? t.nav.login : defaultT.nav.login}
                   </Button>
                 </Link>
                 <Link href="/register">
                   <Button className="bg-teal-600 hover:bg-teal-700 text-white rounded-full px-6">
-                    {t.nav.register}
+                    {mounted ? t.nav.register : defaultT.nav.register}
                   </Button>
                 </Link>
               </>
@@ -227,7 +237,7 @@ const Navbar = () => {
                   >
                     <Button variant="ghost" className="w-full justify-start">
                       <LayoutDashboard className="w-4 h-4 mr-2" />
-                      {user.role === "ADMIN" ? t.nav.adminPanel : t.nav.dashboard}
+                      {mounted ? (user.role === "ADMIN" ? t.nav.adminPanel : t.nav.dashboard) : defaultT.nav.dashboard}
                     </Button>
                   </Link>
                   <Button 
@@ -239,7 +249,7 @@ const Navbar = () => {
                     }}
                   >
                     <LogOut className="w-4 h-4 mr-2" />
-                    {t.nav.logout}
+                    {mounted ? t.nav.logout : defaultT.nav.logout}
                   </Button>
                 </>
               ) : (
@@ -247,12 +257,12 @@ const Navbar = () => {
                   <Link href="/login" onClick={() => setIsOpen(false)}>
                     <Button variant="ghost" className="w-full justify-start">
                       <User className="w-4 h-4 mr-2" />
-                      {t.nav.login}
+                      {mounted ? t.nav.login : defaultT.nav.login}
                     </Button>
                   </Link>
                   <Link href="/register" onClick={() => setIsOpen(false)}>
                     <Button className="w-full bg-teal-600 hover:bg-teal-700">
-                      {t.nav.register}
+                      {mounted ? t.nav.register : defaultT.nav.register}
                     </Button>
                   </Link>
                 </>

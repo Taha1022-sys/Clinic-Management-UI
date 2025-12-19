@@ -86,7 +86,8 @@ const clearAllTokens = () => {
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true); // CRITICAL: Start as true
-  const [language, setLanguageState] = useState<string>(getStoredLanguage());
+  // HYDRATION FIX: Initialize with fixed default, update from localStorage in useEffect
+  const [language, setLanguageState] = useState<string>("TR");
   const router = useRouter();
 
   // Language setter that persists to localStorage
@@ -94,6 +95,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLanguageState(lang);
     saveLanguage(lang);
   };
+
+  // HYDRATION FIX: Load language from localStorage AFTER mount
+  useEffect(() => {
+    const storedLang = getStoredLanguage();
+    if (storedLang !== language) {
+      setLanguageState(storedLang);
+    }
+  }, []);
 
   // STEP 0: Set document language attribute for browser/accessibility
   useEffect(() => {

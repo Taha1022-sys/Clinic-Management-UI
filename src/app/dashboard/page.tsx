@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { getTranslation } from "@/lib/translations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, LogOut, Calendar, Settings as SettingsIcon } from "lucide-react";
-import { userApi } from "@/lib/api";
+import { Heart, LogOut, Calendar, Settings as SettingsIcon, Clock } from "lucide-react";
+import { userApi, appointmentApi, doctorApi } from "@/lib/api";
 import { toast } from "sonner";
 import { z } from "zod";
+import { Badge } from "@/components/ui/badge";
 
 // Validation schemas
 const profileSchema = z.object({
@@ -28,33 +30,22 @@ const passwordSchema = z.object({
 });
 
 const DashboardPage = () => {
-  const { user, loading, logout, refreshUser } = useAuth();
+  // ==========================================
+  // ALL HOOKS MUST BE AT THE TOP - NO EXCEPTIONS
+  // ==========================================
+  const { user, loading, logout, refreshUser, language } = useAuth();
+  const t = getTranslation(language);
+  
+  // State declarations - ALL hooks before any conditional logic
   const [activeTab, setActiveTab] = useState("overview");
-
-  // CRITICAL: Guard logic - wait for auth to initialize
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-teal-500 border-t-transparent mb-4"></div>
-          <p className="text-gray-600">Loading your dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Only redirect if loading is complete AND user is null
-  if (!loading && !user) {
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
-    }
-    return null;
-  }
-
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+  const [doctorsList, setDoctorsList] = useState<any[]>([]);
+  
   // Profile form state
   const [profileData, setProfileData] = useState({
-    firstName: user?.firstName || "",
-    lastName: user?.lastName || "",
+    firstName: "",
+    lastName: "",
   });
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
@@ -69,12 +60,81 @@ const DashboardPage = () => {
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
 
   // Update profile data when user changes
-  if (user && (profileData.firstName !== user.firstName || profileData.lastName !== user.lastName)) {
-    setProfileData({
-      firstName: user.firstName,
-      lastName: user.lastName,
-    });
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+      });
+    }
+  }, [user]);
+
+  // Fetch doctors for lookup
+  useEffect(() => {
+    const fetchDoctors = async () => {
+      try {
+        const response = await doctorApi.getAllDoctors();
+        setDoctorsList(response.data || []);
+      } catch (error) {
+        console.error("Error fetching doctors:", error);
+      }
+    };
+    fetchDoctors();
+  }, []);
+
+  // Fetch appointments
+  useEffect(() => {
+    const fetchAppointments = async () => {
+      if (!user) return;
+      try {
+        setAppointmentsLoading(true);
+        const response = await appointmentApi.getMyAppointments();
+        setAppointments(response.data || []);
+      } catch (error) {
+        console.error("Error fetching appointments:", error);
+        toast.error("Failed to load appointments");
+      } finally {
+        setAppointmentsLoading(false);
+      }
+    };
+    if (activeTab === "appointments") {
+      fetchAppointments();
+    }
+  }, [user, activeTab]);
+
+  // ==========================================
+  // CONDITIONAL RENDERING - AFTER ALL HOOKS
+  // ==========================================
+  
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-teal-500 border-t-transparent mb-4"></div>
+          <p className="text-gray-600">{t.userDashboard.loadingDashboard}</p>
+        </div>
+      </div>
+    );
   }
+
+  // Redirect if not authenticated
+  if (!user) {
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+    return null;
+  }
+
+  // Helper: Get doctor by ID
+  const getDoctorById = (id: number | string) => {
+    const doctor = doctorsList.find((d) => d.id === Number(id));
+    if (!doctor) return null;
+    return {
+      name: doctor.Title && doctor.Fullname ? `${doctor.Title} ${doctor.Fullname}` : doctor.Fullname || "Unknown Doctor",
+      specialty: doctor.Branch || "General Practice",
+    };
+  };
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,14 +149,14 @@ const DashboardPage = () => {
       // Call API
       await userApi.updateProfile(profileData);
 
-      // Refresh user data
+      // CRITICAL: Refresh user data to update the context
       await refreshUser();
 
-      toast.success("Profile updated successfully!");
+      toast.success(t.userDashboard.profileUpdated);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
         const errors: Record<string, string> = {};
-        error.errors.forEach((err) => {
+        error.issues.forEach((err) => {
           if (err.path[0]) {
             errors[err.path[0] as string] = err.message;
           }
@@ -115,10 +175,29 @@ const DashboardPage = () => {
     e.preventDefault();
     setPasswordErrors({});
 
-    try {
-      // Validate
-      passwordSchema.parse(passwordData);
+    // Check password match first
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error(language === "TR" ? "Şifreler uyuşmuyor" : language === "AR" ? "كلمات المرور غير متطابقة" : "Passwords don't match");
+      setPasswordErrors({ confirmPassword: "Passwords don't match" });
+      return;
+    }
 
+    // Use safeParse instead of parse
+    const result = passwordSchema.safeParse(passwordData);
+    if (!result.success) {
+      const fieldErrors = result.error.flatten().fieldErrors;
+      const errors: Record<string, string> = {};
+      Object.keys(fieldErrors).forEach((key) => {
+        const messages = fieldErrors[key as keyof typeof fieldErrors];
+        if (messages && messages.length > 0) {
+          errors[key] = messages[0];
+        }
+      });
+      setPasswordErrors(errors);
+      return;
+    }
+
+    try {
       setPasswordLoading(true);
 
       // Call API
@@ -134,20 +213,10 @@ const DashboardPage = () => {
         confirmPassword: "",
       });
 
-      toast.success("Password updated successfully!");
+      toast.success(t.userDashboard.passwordUpdated);
     } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        const errors: Record<string, string> = {};
-        error.errors.forEach((err) => {
-          if (err.path[0]) {
-            errors[err.path[0] as string] = err.message;
-          }
-        });
-        setPasswordErrors(errors);
-      } else {
-        const errorMessage = error.response?.data?.message || "Failed to update password";
-        toast.error(errorMessage);
-      }
+      const errorMessage = error.response?.data?.message || "Failed to update password";
+      toast.error(errorMessage);
     } finally {
       setPasswordLoading(false);
     }
@@ -172,9 +241,9 @@ const DashboardPage = () => {
             <div className="flex items-center space-x-4">
               <div className="text-right">
                 <p className="text-sm font-medium text-gray-900">
-                  {user?.firstName} {user?.lastName}
+                  {user.firstName} {user.lastName}
                 </p>
-                <p className="text-xs text-gray-500">{user?.role}</p>
+                <p className="text-xs text-gray-500">{user.role}</p>
               </div>
               <Button
                 onClick={logout}
@@ -183,7 +252,7 @@ const DashboardPage = () => {
                 className="flex items-center space-x-2"
               >
                 <LogOut className="w-4 h-4" />
-                <span>Logout</span>
+                <span>{t.nav.logout}</span>
               </Button>
             </div>
           </div>
@@ -194,14 +263,14 @@ const DashboardPage = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3 mb-8">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="overview">{t.userDashboard.overview}</TabsTrigger>
             <TabsTrigger value="appointments">
               <Calendar className="w-4 h-4 mr-2" />
-              Appointments
+              {t.userDashboard.appointments}
             </TabsTrigger>
             <TabsTrigger value="settings">
               <SettingsIcon className="w-4 h-4 mr-2" />
-              Settings
+              {t.userDashboard.settings}
             </TabsTrigger>
           </TabsList>
 
@@ -210,9 +279,9 @@ const DashboardPage = () => {
             {/* Quick Actions Card */}
             <Card className="border-teal-200 bg-gradient-to-br from-teal-50 to-white">
               <CardHeader>
-                <CardTitle className="text-xl">Quick Actions</CardTitle>
+                <CardTitle className="text-xl">{t.userDashboard.overview}</CardTitle>
                 <CardDescription>
-                  Get started with booking or explore our services
+                  {t.hero.subtitle}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col sm:flex-row gap-4">
@@ -221,7 +290,7 @@ const DashboardPage = () => {
                   className="flex-1 bg-teal-600 hover:bg-teal-700 text-white h-16 text-lg"
                 >
                   <Calendar className="w-5 h-5 mr-2" />
-                  Book New Appointment
+                  {t.booking.bookAppointment}
                 </Button>
                 <Button
                   onClick={() => window.location.href = "/"}
@@ -229,43 +298,35 @@ const DashboardPage = () => {
                   className="flex-1 h-16 text-lg border-teal-600 text-teal-600 hover:bg-teal-50"
                 >
                   <Heart className="w-5 h-5 mr-2" />
-                  Back to Home
+                  {t.nav.home}
                 </Button>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Welcome to MediFlow! 🎉</CardTitle>
+                <CardTitle>{t.dashboard.welcome}, {user.firstName}! 🎉</CardTitle>
                 <CardDescription>
-                  You&apos;ve successfully logged in. Your clinic management dashboard is ready.
+                  {t.hero.subtitle}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 mb-6">
-                  <p className="text-sm text-teal-800">
-                    <strong>✅ Authentication System Working!</strong>
-                    <br />
-                    Your token is stored in cookies and API requests are configured.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">User Info</CardTitle>
+                      <CardTitle className="text-base">{t.userDashboard.profile}</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-1">
-                      <p className="text-sm text-gray-600">Email: {user?.email}</p>
-                      <p className="text-sm text-gray-600">Role: {user?.role}</p>
+                    <CardContent className="space-y-2">
+                      <p className="text-sm text-gray-600"><strong>Email:</strong> {user.email}</p>
+                      <p className="text-sm text-gray-600"><strong>Role:</strong> {user.role}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Next Steps</CardTitle>
+                      <CardTitle className="text-base">{t.userDashboard.appointments}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-gray-600">Book appointments with expert doctors</p>
+                      <p className="text-sm text-gray-600">{t.dashboard.myAppointments}</p>
                     </CardContent>
                   </Card>
                   <Card>
@@ -285,14 +346,97 @@ const DashboardPage = () => {
           <TabsContent value="appointments">
             <Card>
               <CardHeader>
-                <CardTitle>Appointments</CardTitle>
-                <CardDescription>Manage your scheduled appointments</CardDescription>
+                <CardTitle>{t.userDashboard.appointments}</CardTitle>
+                <CardDescription>{t.dashboard.myAppointments}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-12 text-gray-500">
-                  <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                  <p>Appointments feature coming soon...</p>
-                </div>
+                {appointmentsLoading ? (
+                  <div className="text-center py-12">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-teal-500 border-t-transparent"></div>
+                    <p className="mt-4 text-gray-600">{t.common.loading}</p>
+                  </div>
+                ) : appointments.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                    <p>{t.dashboard.noAppointments}</p>
+                    <Button 
+                      onClick={() => window.location.href = "/doctors"}
+                      className="mt-4 bg-teal-600 hover:bg-teal-700"
+                    >
+                      {t.dashboard.bookNew}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {appointments.map((appointment) => {
+                      const doctor = getDoctorById(appointment.strapiDoctorId);
+                      const statusColor = ({
+                        PENDING: "bg-yellow-100 text-yellow-800",
+                        CONFIRMED: "bg-blue-100 text-blue-800",
+                        COMPLETED: "bg-green-100 text-green-800",
+                        CANCELLED: "bg-red-100 text-red-800",
+                      } as Record<string, string>)[appointment.status] || "bg-gray-100 text-gray-800";
+
+                      return (
+                        <Card key={appointment.id} className="border-l-4 border-l-teal-500">
+                          <CardContent className="pt-6">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-semibold text-lg">
+                                    {doctor?.name || "Unknown Doctor"}
+                                  </h3>
+                                  <Badge className={statusColor}>{appointment.status}</Badge>
+                                </div>
+                                <p className="text-sm text-gray-600">
+                                  <strong>{t.userDashboard.specialty}:</strong> {doctor?.specialty || "N/A"}
+                                </p>
+                                <div className="flex items-center gap-2 text-sm text-gray-600">
+                                  <Clock className="w-4 h-4" />
+                                  <span>
+                                    {new Date(appointment.appointmentDate).toLocaleString(language === "TR" ? "tr-TR" : language === "AR" ? "ar-SA" : "en-US")}
+                                  </span>
+                                </div>
+                                {appointment.notes && (
+                                  <p className="text-sm text-gray-600 mt-2">
+                                    <strong>Notes:</strong> {appointment.notes}
+                                  </p>
+                                )}
+                              </div>
+                              {appointment.status === "PENDING" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-red-500 text-red-500 hover:bg-red-50"
+                                  onClick={async () => {
+                                    try {
+                                      await appointmentApi.cancelAppointment(appointment.id);
+                                      toast.success(t.userDashboard.cancelSuccess);
+                                      setAppointments(appointments.filter(a => a.id !== appointment.id));
+                                    } catch (error) {
+                                      toast.error(t.userDashboard.cancelError);
+                                    }
+                                  }}
+                                >
+                                  {t.userDashboard.cancel}
+                                </Button>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                    <div className="text-center pt-4">
+                      <Button 
+                        onClick={() => window.location.href = "/doctors"}
+                        variant="outline"
+                        className="border-teal-600 text-teal-600 hover:bg-teal-50"
+                      >
+                        {t.dashboard.bookNew}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -302,14 +446,14 @@ const DashboardPage = () => {
             {/* Profile Settings */}
             <Card>
               <CardHeader>
-                <CardTitle>Profile Settings</CardTitle>
-                <CardDescription>Update your personal information</CardDescription>
+                <CardTitle>{t.userDashboard.profile}</CardTitle>
+                <CardDescription>{t.hero.subtitle}</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleProfileSubmit} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="firstName">First Name</Label>
+                      <Label htmlFor="firstName">{t.userDashboard.firstName}</Label>
                       <Input
                         id="firstName"
                         value={profileData.firstName}
@@ -324,7 +468,7 @@ const DashboardPage = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="lastName">Last Name</Label>
+                      <Label htmlFor="lastName">{t.userDashboard.lastName}</Label>
                       <Input
                         id="lastName"
                         value={profileData.lastName}
@@ -340,13 +484,13 @@ const DashboardPage = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input id="email" value={user?.email || ""} disabled className="bg-gray-50" />
+                    <Label htmlFor="email">{t.contact.email}</Label>
+                    <Input id="email" value={user.email || ""} disabled className="bg-gray-50" />
                     <p className="text-sm text-gray-500">Email cannot be changed</p>
                   </div>
 
                   <Button type="submit" disabled={profileLoading}>
-                    {profileLoading ? "Saving..." : "Save Changes"}
+                    {profileLoading ? t.common.loading : t.userDashboard.updateProfile}
                   </Button>
                 </form>
               </CardContent>
@@ -355,13 +499,13 @@ const DashboardPage = () => {
             {/* Password Settings */}
             <Card>
               <CardHeader>
-                <CardTitle>Change Password</CardTitle>
-                <CardDescription>Update your account password</CardDescription>
+                <CardTitle>{t.userDashboard.security}</CardTitle>
+                <CardDescription>{t.userDashboard.changePassword}</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handlePasswordSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="currentPassword">Current Password</Label>
+                    <Label htmlFor="currentPassword">{t.userDashboard.currentPassword}</Label>
                     <Input
                       id="currentPassword"
                       type="password"
@@ -377,7 +521,7 @@ const DashboardPage = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="newPassword">New Password</Label>
+                    <Label htmlFor="newPassword">{t.userDashboard.newPassword}</Label>
                     <Input
                       id="newPassword"
                       type="password"
@@ -394,7 +538,7 @@ const DashboardPage = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                    <Label htmlFor="confirmPassword">{t.userDashboard.confirmPassword}</Label>
                     <Input
                       id="confirmPassword"
                       type="password"
@@ -410,7 +554,7 @@ const DashboardPage = () => {
                   </div>
 
                   <Button type="submit" disabled={passwordLoading}>
-                    {passwordLoading ? "Updating..." : "Update Password"}
+                    {passwordLoading ? t.common.loading : t.userDashboard.changePassword}
                   </Button>
                 </form>
               </CardContent>

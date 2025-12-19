@@ -71,12 +71,16 @@ export default function BookingModal({ isOpen, onClose, doctor, isAuthenticated 
       const appointmentDateTime = new Date(selectedDate);
       appointmentDateTime.setHours(hours, minutes, 0, 0);
 
-      // Create appointment
-      await appointmentApi.createAppointment({
-        doctor: Number(doctor.id), // Backend expects 'doctor' field as number
+      // Create appointment payload with EXACT backend field name
+      const payload = {
+        strapiDoctorId: Number(doctor.id), // Backend expects 'strapiDoctorId' as a Number
         appointmentDate: appointmentDateTime.toISOString(),
         notes: notes.trim() || undefined,
-      });
+      };
+
+      console.log("✅ [BookingModal] Sending payload:", payload); // Debug log
+
+      await appointmentApi.createAppointment(payload);
 
       toast.success("Appointment booked successfully!");
       onClose();

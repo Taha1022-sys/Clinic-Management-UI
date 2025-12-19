@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +36,13 @@ const timeSlots = [
   "16:00", "16:30", "17:00"
 ];
 
+interface Appointment {
+  id: string;
+  appointmentDate: string;
+  strapiDoctorId: number;
+  status: string;
+}
+
 export default function BookingModal({ doctor, children }: BookingModalProps) {
   const { user, language } = useAuth();
   const router = useRouter();
@@ -44,7 +51,68 @@ export default function BookingModal({ doctor, children }: BookingModalProps) {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
+  const [fetchingSlots, setFetchingSlots] = useState(false);
   const t = getTranslation(language);
+
+  // Fetch occupied slots when modal opens
+  useEffect(() => {
+    const fetchOccupiedSlots = async () => {
+      if (!open) return;
+      
+      try {
+        setFetchingSlots(true);
+        const response = await appointmentApi.getAllAppointments();
+        const allAppointments = response.data || [];
+        
+        // Filter appointments for this specific doctor (exclude CANCELLED)
+        const doctorAppointments = allAppointments.filter(
+          (apt: Appointment) => 
+            Number(apt.strapiDoctorId) === Number(doctor.id) && 
+            apt.status !== "CANCELLED"
+        );
+        
+        // Format occupied slots as YYYY-MM-DDTHH:mm for precise comparison
+        const occupied = doctorAppointments.map((apt: Appointment) => {
+          const aptDate = new Date(apt.appointmentDate);
+          const year = aptDate.getFullYear();
+          const month = String(aptDate.getMonth() + 1).padStart(2, '0');
+          const day = String(aptDate.getDate()).padStart(2, '0');
+          const hours = String(aptDate.getHours()).padStart(2, '0');
+          const minutes = String(aptDate.getMinutes()).padStart(2, '0');
+          return `${year}-${month}-${day}T${hours}:${minutes}`;
+        });
+        
+        setOccupiedSlots(occupied);
+        console.log("[BOOKING] Formatted occupied slots:", occupied);
+      } catch (error) {
+        console.error("[BOOKING] Error fetching occupied slots:", error);
+      } finally {
+        setFetchingSlots(false);
+      }
+    };
+
+    fetchOccupiedSlots();
+  }, [open, doctor.id]);
+
+  // Check if a specific time slot is occupied on the selected date
+  const isSlotOccupied = (timeSlot: string): boolean => {
+    if (!date) return false;
+
+    // Format the selected date + time slot as YYYY-MM-DDTHH:mm
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const formattedSlot = `${year}-${month}-${day}T${timeSlot}`;
+
+    const isBusy = occupiedSlots.includes(formattedSlot);
+    
+    if (isBusy) {
+      console.log("[BOOKING] Slot occupied:", formattedSlot);
+    }
+    
+    return isBusy;
+  };
 
   const handleBooking = async () => {
     const t = getTranslation(language);
@@ -75,7 +143,7 @@ export default function BookingModal({ doctor, children }: BookingModalProps) {
       console.log("[BOOKING] Doctor ID Value:", doctorIdNumber);
       
       const payload = {
-        doctorId: doctorIdNumber,
+        strapiDoctorId: doctorIdNumber,
         appointmentDate: appointmentDate.toISOString(),
         notes: notes.trim()
       };
@@ -101,10 +169,10 @@ export default function BookingModal({ doctor, children }: BookingModalProps) {
       <DialogTrigger asChild>
         {children}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto w-[95vw]">
         <DialogHeader>
-          <DialogTitle>{t.booking.bookAppointment}: {doctor.name}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-lg md:text-xl">{t.booking.bookAppointment}: {doctor.name}</DialogTitle>
+          <DialogDescription className="text-sm">
             {doctor.specialty}
           </DialogDescription>
         </DialogHeader>
@@ -112,39 +180,65 @@ export default function BookingModal({ doctor, children }: BookingModalProps) {
         <div className="grid gap-6 py-4">
           {/* Date Selection */}
           <div className="space-y-2">
-            <Label className="flex items-center gap-2">
+            <Label className="flex items-center gap-2 text-sm md:text-base">
               <CalendarIcon className="w-4 h-4 text-teal-600" />
               {t.booking.selectDate}
             </Label>
-            <div className="border rounded-md p-2 flex justify-center bg-white">
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={setDate}
-                className="rounded-md border-none"
-                disabled={(date) => date < new Date() || date.getDay() === 0}
-              />
+            <div className="border rounded-md p-2 flex justify-center bg-white overflow-hidden">
+              <div className="scale-90 md:scale-100">
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={setDate}
+                  className="rounded-md border-none"
+                  disabled={(date) => date < new Date() || date.getDay() === 0}
+                />
+              </div>
             </div>
           </div>
 
           {/* Time Selection */}
           <div className="space-y-2">
-            <Label className="flex items-center gap-2">
+            <Label className="flex items-center gap-2 text-sm md:text-base">
               <Clock className="w-4 h-4 text-teal-600" />
               {t.booking.selectTime}
             </Label>
-            <div className="grid grid-cols-4 gap-2">
-              {timeSlots.map((time) => (
-                <Button
-                  key={time}
-                  variant={selectedTime === time ? "default" : "outline"}
-                  className={selectedTime === time ? "bg-teal-600" : "text-xs p-1"}
-                  onClick={() => setSelectedTime(time)}
-                >
-                  {time}
-                </Button>
-              ))}
-            </div>
+            {fetchingSlots ? (
+              <div className="text-center py-4 text-sm text-gray-500">
+                {t.common.loading}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {timeSlots.map((time) => {
+                  const occupied = isSlotOccupied(time);
+                  return (
+                    <Button
+                      key={time}
+                      variant={selectedTime === time ? "default" : "outline"}
+                      className={
+                        occupied
+                          ? "!bg-slate-200 !text-slate-400 !cursor-not-allowed !opacity-70 !border-none hover:!bg-slate-200 flex flex-col items-center py-1 px-2 h-auto"
+                          : selectedTime === time
+                          ? "bg-teal-600"
+                          : "text-xs p-1"
+                      }
+                      onClick={() => !occupied && setSelectedTime(time)}
+                      disabled={occupied}
+                      title={occupied ? (t.booking?.slotOccupied || "Slot is occupied") : ""}
+                    >
+                      <span className={occupied ? "line-through text-xs" : ""}>
+                        {time}
+                      </span>
+                      {occupied && (
+                        <span className="text-[10px] font-bold mt-0.5 block">
+                          {t.booking?.occupiedLabel || (language === "TR" ? "DOLU" : language === "AR" ? "ممتلئ" : "FULL")}
+                        </span>
+                      )}
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Notes */}
