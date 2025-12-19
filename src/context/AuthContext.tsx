@@ -183,3 +183,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       setLoading(true);
       const response = await authApi.register(data);
+      const { accessToken, user: userData } = response.data;
+
+      if (!accessToken || !userData) {
+        throw new Error("Invalid registration response");
+      }
+
+      saveToken(accessToken);
+      setUser(userData);
+      
+      toast.success("Account created successfully!");
+      router.push("/dashboard");
+      
+    } catch (error: any) {
+      const msg = error.response?.data?.message || "Registration failed";
+      toast.error(msg);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // STEP 4: Logout function
+  const logout = useCallback(() => {
+    // console.log("🚪 [AuthContext] Logging out...");
+    clearAllTokens();
+    setUser(null);
+    router.push("/login");
+    toast.info("Logged out successfully");
+  }, [router]);
+
+  // STEP 5: Refresh user profile
+  const refreshUser = async () => {
+    try {
+      const response = await userApi.getProfile();
+      setUser(response.data);
+    } catch (error) {
+      console.error("❌ [AuthContext] Failed to refresh user", error);
+      // Buradaki refresh hatasında da hemen atmıyoruz.
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, language, setLanguage, login, register, logout, refreshUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+};
