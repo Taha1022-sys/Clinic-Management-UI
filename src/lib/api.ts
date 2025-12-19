@@ -9,18 +9,26 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-// Request Interceptor (Token Kontrolü)
+// Request Interceptor (Token Kontrolü ve Enjeksiyonu)
 api.interceptors.request.use(
   (config) => {
-    let token = typeof window !== 'undefined' ? localStorage.getItem("token") || localStorage.getItem("accessToken") : null;
+    // Token'ı bulmaya çalış
+    let token = null;
+    if (typeof window !== 'undefined') {
+        token = localStorage.getItem("token") || localStorage.getItem("accessToken");
+    }
 
     if (!token && typeof document !== 'undefined') {
        const match = document.cookie.match(new RegExp('(^| )token=([^;]+)'));
        if (match) token = match[2];
     }
 
+    // Token varsa Header'a ekle ve konsola bas (Debug için)
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      // console.log("🔑 Token isteğe eklendi:", config.url); // İstersen bu yorumu açıp bakabilirsin
+    } else {
+      console.warn("⚠️ İstek tokensiz gidiyor:", config.url);
     }
     
     return config;
@@ -28,16 +36,15 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// --- TÜM API EXPORTLARI BURADA ---
+// --- TÜM API EXPORTLARI ---
 
 export const authApi = {
     login: (credentials: any) => api.post("/auth/login", credentials),
     register: (data: any) => api.post("/auth/register", data),
-    getProfile: () => api.get("/auth/profile"),
+    getProfile: () => api.get("/users/profile"), // DÜZELTİLDİ: /auth/profile yerine /users/profile
 };
 
 export const doctorApi = {
-  // Senin yakaladığın CMS rotası
   getAllDoctors: () => api.get("/cms/doctors"), 
   getDoctorById: (id: string) => api.get(`/cms/doctors/${id}`),
 };
@@ -53,13 +60,14 @@ export const appointmentApi = {
   cancelAppointment: (id: string) => api.patch(`/appointments/${id}/cancel`),
 };
 
+// DÜZELTİLDİ: Auth yerine Users endpoint'i kullanılıyor
 export const userApi = {
-  getProfile: () => api.get("/auth/profile"),
+  getProfile: () => api.get("/users/profile"), 
   updateProfile: (data: { firstName: string; lastName: string }) =>
     api.patch("/users/profile", data),
   changePassword: (data: { currentPassword: string; newPassword: string }) =>
     api.patch("/users/password", data),
-  getAllUsers: () => api.get("/users"), // Admin only
+  getAllUsers: () => api.get("/users"), 
 };
 
 export const adminApi = {
