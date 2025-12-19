@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // 1. EKLENDİ: Router hook'u
 import { useAuth } from "@/context/AuthContext";
 import AuthLayout from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 const LoginPage = () => {
   const { login } = useAuth();
+  const router = useRouter(); // 2. EKLENDİ: Router tanımlandı
   const [isLoading, setIsLoading] = useState(false);
 
   const {
@@ -35,6 +37,13 @@ const LoginPage = () => {
     setIsLoading(true);
     try {
       await login(data);
+      
+      // 3. EKLENDİ: Yönlendirme Mantığı
+      // router.refresh() -> Auth durumunu (header/layout) güncellemek için sayfayı tazeletir
+      router.refresh(); 
+      // router.push('/') -> Seni ana sayfaya atar
+      router.push("/"); 
+      
     } catch (error) {
       console.error("Login error:", error);
     } finally {
@@ -75,8 +84,9 @@ const LoginPage = () => {
             <Label htmlFor="password" className="text-sm font-medium text-gray-700">
               Password
             </Label>
+            {/* 4. DÜZELTİLDİ: 404 vermesin diye href="#" yapıldı */}
             <Link 
-              href="/forgot-password" 
+              href="#" 
               className="text-xs text-teal-600 hover:text-teal-700 font-medium"
             >
               Forgot password?
