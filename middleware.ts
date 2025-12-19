@@ -2,24 +2,33 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get("mediflow_token");
+  // HATA BURADAYDI: "mediflow_token" değil, senin AuthContext'in "token" olarak kaydediyor.
+  const token = request.cookies.get("token"); 
+
   const isAuthPage = request.nextUrl.pathname.startsWith("/login") || 
                      request.nextUrl.pathname.startsWith("/register");
-  const isDashboard = request.nextUrl.pathname.startsWith("/dashboard");
+  
+  // Dashboard rotaları (Panel de dahil edilmeli)
+  const isDashboard = request.nextUrl.pathname.startsWith("/dashboard") || 
+                      request.nextUrl.pathname.startsWith("/panel");
 
-  // If user has token and tries to access auth pages, redirect to dashboard
+  // Eğer token varsa ve login sayfasına girmeye çalışıyorsa -> Dashboard'a at
   if (token && isAuthPage) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  // If user doesn't have token and tries to access protected pages, redirect to login
+  // Eğer token YOKSA ve dashboard'a girmeye çalışıyorsa -> Login'e at
   if (!token && isDashboard) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    // Giriş yaptıktan sonra geri dönebilmesi için mevcut URL'i parametre ekleyebiliriz (Opsiyonel)
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/register"],
+  // Matcher'a "/panel/:path*" yolunu da ekledim ki admin paneli de korunsun
+  matcher: ["/dashboard/:path*", "/panel/:path*", "/login", "/register"],
 };
