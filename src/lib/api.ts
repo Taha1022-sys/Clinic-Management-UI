@@ -1,19 +1,23 @@
 import axios from "axios";
 
-// Base instance
+// 🚨 BURAYI DİKKATLİ OKU: Environment variable riskini sildik.
+// Adresi doğrudan yazdık. Artık localhost'a gitme şansı %0.
+const API_URL = "https://clinic-management-api-production.up.railway.app/api/v1";
+
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1", 
+  baseURL: API_URL, 
   headers: {
     "Content-Type": "application/json",
   },
   withCredentials: true,
 });
 
-// Request Interceptor (Token Kontrolü ve Enjeksiyonu)
+// Request Interceptor (Token Kontrolü)
 api.interceptors.request.use(
   (config) => {
-    // Token'ı bulmaya çalış
     let token = null;
+    
+    // Güvenli Token Okuma
     if (typeof window !== 'undefined') {
         token = localStorage.getItem("token") || localStorage.getItem("accessToken");
     }
@@ -23,12 +27,8 @@ api.interceptors.request.use(
        if (match) token = match[2];
     }
 
-    // Token varsa Header'a ekle ve konsola bas (Debug için)
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      // console.log("🔑 Token isteğe eklendi:", config.url); // İstersen bu yorumu açıp bakabilirsin
-    } else {
-      console.warn("⚠️ İstek tokensiz gidiyor:", config.url);
     }
     
     return config;
@@ -36,12 +36,12 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// --- TÜM API EXPORTLARI ---
+// --- API ENDPOINTS ---
 
 export const authApi = {
     login: (credentials: any) => api.post("/auth/login", credentials),
     register: (data: any) => api.post("/auth/register", data),
-    getProfile: () => api.get("/users/profile"), // DÜZELTİLDİ: /auth/profile yerine /users/profile
+    getProfile: () => api.get("/auth/profile"), // Auth controller üzerinden çekelim
 };
 
 export const doctorApi = {
@@ -60,9 +60,8 @@ export const appointmentApi = {
   cancelAppointment: (id: string) => api.patch(`/appointments/${id}/cancel`),
 };
 
-// DÜZELTİLDİ: Auth yerine Users endpoint'i kullanılıyor
 export const userApi = {
-  getProfile: () => api.get("/users/profile"), 
+  getProfile: () => api.get("/auth/profile"), // BURAYI DÜZELTTİM: /users/profile yerine /auth/profile
   updateProfile: (data: { firstName: string; lastName: string }) =>
     api.patch("/users/profile", data),
   changePassword: (data: { currentPassword: string; newPassword: string }) =>
